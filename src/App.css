@@ -137,14 +137,22 @@
   gap: 1em;
   padding: 0.8em 0;
   border-bottom: 1px solid var(--gray-color);
+  flex-wrap: wrap;
 }
 
 .file-item:first-child {
   border-top: 1px solid var(--gray-color);
 }
 
-.file-item__name {
+.file-item__info {
   flex: 1;
+  min-width: 14em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+}
+
+.file-item__name {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.85em;
   overflow: hidden;
@@ -183,6 +191,7 @@
 .file-item__actions {
   display: flex;
   gap: 0.5em;
+  margin-left: auto;
 }
 
 .file-item__actions .btn {

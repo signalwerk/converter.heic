@@ -6,6 +6,11 @@ type OutputFormat = "image/jpeg" | "image/png";
 type QualityPreset = "low" | "mid" | "high" | "custom";
 type ResizeMode = "none" | "width" | "height";
 
+interface PixelDimensions {
+  width: number;
+  height: number;
+}
+
 interface FileEntry {
   id: string;
   file: File;
@@ -15,6 +20,8 @@ interface FileEntry {
   error?: string;
   resultBlob?: Blob;
   resultName?: string;
+  sourceDimensions?: PixelDimensions;
+  resultDimensions?: PixelDimensions;
 }
 
 const QUALITY_MAP: Record<Exclude<QualityPreset, "custom">, number> = {
@@ -33,8 +40,37 @@ function getExtension(format: OutputFormat): string {
   return format === "image/jpeg" ? ".jpg" : ".png";
 }
 
+function formatDimensions(dimensions: PixelDimensions): string {
+  return `${dimensions.width}x${dimensions.height}`;
+}
+
+function getDimensionsLabel(entry: FileEntry): string | null {
+  if (!entry.sourceDimensions) return null;
+  if (!entry.resultDimensions) return formatDimensions(entry.sourceDimensions);
+
+  const sourceLabel = formatDimensions(entry.sourceDimensions);
+  const resultLabel = formatDimensions(entry.resultDimensions);
+  return sourceLabel === resultLabel ? sourceLabel : `${sourceLabel} -> ${resultLabel}`;
+}
+
 function replaceExtension(name: string, format: OutputFormat): string {
   return name.replace(/\.[^.]+$/, getExtension(format));
+}
+
+async function readImageDimensions(blob: Blob): Promise<PixelDimensions> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to read image dimensions"));
+    };
+    img.src = url;
+  });
 }
 
 async function resizeBlob(
@@ -42,12 +78,16 @@ async function resizeBlob(
   format: OutputFormat,
   quality: number,
   resizeMode: ResizeMode,
-  resizeValue: number
-): Promise<Blob> {
+  resizeValue: number,
+  sourceDimensions: PixelDimensions
+): Promise<{ blob: Blob; dimensions: PixelDimensions }> {
   if (resizeMode === "none") {
-    if (format === "image/png") return blob;
+    if (format === "image/png") return { blob, dimensions: sourceDimensions };
     // Re-encode JPEG with chosen quality
-    return reencodeBlob(blob, format, quality);
+    return {
+      blob: await reencodeBlob(blob, format, quality),
+      dimensions: sourceDimensions,
+    };
   }
 
   return new Promise((resolve, reject) => {
@@ -75,7 +115,12 @@ async function resizeBlob(
       ctx.drawImage(img, 0, 0, w, h);
       canvas.toBlob(
         (result) => {
-          if (result) resolve(result);
+          if (result) {
+            resolve({
+              blob: result,
+              dimensions: { width: w, height: h },
+            });
+          }
           else reject(new Error("Canvas toBlob failed"));
         },
         format,
@@ -159,7 +204,14 @@ function App() {
 
       return prev.map((f) =>
         f.status === "done" || f.status === "error"
-          ? { ...f, status: "pending", resultBlob: undefined, resultName: undefined, error: undefined }
+          ? {
+              ...f,
+              status: "pending",
+              resultBlob: undefined,
+              resultName: undefined,
+              resultDimensions: undefined,
+              error: undefined,
+            }
           : f
       );
     });
@@ -235,13 +287,37 @@ function App() {
 
         // heic-to returns a Blob directly
         const blob = converted as Blob;
-        const resized = await resizeBlob(blob, format, quality, resizeMode, resizeValue);
+        const sourceDimensions = await readImageDimensions(blob);
+
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === entry.id
+              ? { ...f, sourceDimensions, resultDimensions: undefined, error: undefined }
+              : f
+          )
+        );
+
+        const resized = await resizeBlob(
+          blob,
+          format,
+          quality,
+          resizeMode,
+          resizeValue,
+          sourceDimensions
+        );
         const resultName = replaceExtension(entry.name, format);
 
         setFiles((prev) =>
           prev.map((f) =>
             f.id === entry.id
-              ? { ...f, status: "done", resultBlob: resized, resultName }
+              ? {
+                  ...f,
+                  status: "done",
+                  resultBlob: resized.blob,
+                  resultName,
+                  sourceDimensions,
+                  resultDimensions: resized.dimensions,
+                }
               : f
           )
         );
@@ -438,56 +514,66 @@ function App() {
       {/* File List */}
       {files.length > 0 && (
         <div className="file-list">
-          {files.map((entry) => (
-            <div className="file-item" key={entry.id}>
-              <span className="file-item__name" title={entry.name}>
-                {entry.name}
-              </span>
-              <span className="file-item__size">{formatBytes(entry.size)}</span>
-              <span
-                className={`file-item__status file-item__status--${entry.status}`}
-              >
-                {entry.status === "pending" && "Pending"}
-                {entry.status === "converting" && "Converting…"}
-                {entry.status === "done" &&
-                  `✓ Done${entry.resultBlob ? ` (${formatBytes(entry.resultBlob.size)})` : ""}`}
-                {entry.status === "error" && `✗ Error`}
-              </span>
-              <div className="file-item__actions">
-                {entry.status === "done" && (
-                  <button className="btn" onClick={() => downloadSingle(entry)}>
-                    Save
+          {files.map((entry) => {
+            const dimensionsLabel = getDimensionsLabel(entry);
+
+            return (
+              <div className="file-item" key={entry.id}>
+                <div className="file-item__info">
+                  <span className="file-item__name" title={entry.name}>
+                    {entry.name}
+                  </span>
+                  <span className="file-item__size">
+                    {formatBytes(entry.size)}
+                    {dimensionsLabel ? ` · ${dimensionsLabel}` : ""}
+                  </span>
+                </div>
+                <span
+                  className={`file-item__status file-item__status--${entry.status}`}
+                >
+                  {entry.status === "pending" && "Pending"}
+                  {entry.status === "converting" && "Converting…"}
+                  {entry.status === "done" &&
+                    `✓ Done${entry.resultBlob ? ` (${formatBytes(entry.resultBlob.size)})` : ""}`}
+                  {entry.status === "error" && `✗ Error`}
+                </span>
+                <div className="file-item__actions">
+                  {entry.status === "done" && (
+                    <button className="btn" onClick={() => downloadSingle(entry)}>
+                      Save
+                    </button>
+                  )}
+                  {(entry.status === "done" || entry.status === "error") && (
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setFiles((prev) =>
+                          prev.map((f) =>
+                            f.id === entry.id
+                              ? {
+                                  ...f,
+                                  status: "pending",
+                                  resultBlob: undefined,
+                                  resultName: undefined,
+                                  resultDimensions: undefined,
+                                  error: undefined,
+                                }
+                              : f
+                          )
+                        );
+                      }}
+                      title="Reset to pending"
+                    >
+                      Reset
+                    </button>
+                  )}
+                  <button className="btn" onClick={() => removeFile(entry.id)}>
+                    ✕
                   </button>
-                )}
-                {(entry.status === "done" || entry.status === "error") && (
-                  <button
-                    className="btn"
-                    onClick={() => {
-                      setFiles((prev) =>
-                        prev.map((f) =>
-                          f.id === entry.id
-                            ? {
-                                ...f,
-                                status: "pending",
-                                resultBlob: undefined,
-                                resultName: undefined,
-                                error: undefined,
-                              }
-                            : f
-                        )
-                      );
-                    }}
-                    title="Reset to pending"
-                  >
-                    Reset
-                  </button>
-                )}
-                <button className="btn" onClick={() => removeFile(entry.id)}>
-                  ✕
-                </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
