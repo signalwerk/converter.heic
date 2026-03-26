@@ -1,73 +1,65 @@
-# React + TypeScript + Vite
+# HEIC Converter
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A small browser-based app for converting `.heic` and `.heif` images into `JPEG` or `PNG`.
 
-Currently, two official plugins are available:
+The app runs fully client-side in the browser. Files are processed locally and are not uploaded to a server.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+- Drag and drop one or more HEIC/HEIF files
+- Convert to JPEG or PNG
+- Choose JPEG quality presets or a custom quality value
+- Resize by max width or max height before download
+- Download files individually or all at once
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Tech Stack
 
-## Expanding the ESLint configuration
+- React 19
+- TypeScript
+- Vite
+- [`heic-to`](https://www.npmjs.com/package/heic-to) for browser-side HEIC conversion
+- [`file-saver`](https://www.npmjs.com/package/file-saver) for downloads
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Development
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The local dev server usually starts at `http://localhost:5173`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Scripts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- `npm run dev` starts the Vite development server
+- `npm run build` creates a production build in `dist/`
+- `npm run preview` previews the production build locally
+- `npm run lint` runs ESLint
+
+## GitHub Pages Deployment
+
+This repository includes a GitHub Actions workflow that builds the app and deploys `dist/` to GitHub Pages whenever code is pushed to `main`.
+
+### One-time GitHub setup
+
+1. Push this repository to GitHub.
+2. In GitHub, open `Settings` -> `Pages`.
+3. Under `Build and deployment`, set `Source` to `GitHub Actions`.
+4. Make sure your default deployment branch is `main`, or update the workflow if you use a different branch.
+
+### Notes
+
+- The Vite config automatically uses the correct base path when building on GitHub Actions for project pages such as `https://username.github.io/repository-name/`.
+- If this repo is published as a user or organization site like `https://username.github.io/`, the app keeps using `/` as the base path.
+
+## Project Structure
+
+```text
+.
+├── public/
+├── src/
+├── .github/workflows/
+├── index.html
+├── package.json
+└── vite.config.ts
 ```
