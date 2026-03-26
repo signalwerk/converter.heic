@@ -17,9 +17,9 @@
   --layout-max-width: 48em;
   --layout-padding-left-right: 1.5em;
 
-  --font-size--default: 15px;
-  --font-size--m: 17px;
-  --font-size--l: 19px;
+  --font-size--default: 14px;
+  --font-size--m: 15px;
+  --font-size--l: 16px;
 
   font-size: var(--font-size--default);
   height: 100%;
