@@ -57,6 +57,32 @@ function replaceExtension(name: string, format: OutputFormat): string {
   return name.replace(/\.[^.]+$/, getExtension(format));
 }
 
+function isHeic(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return (
+    name.endsWith(".heic") ||
+    name.endsWith(".heif") ||
+    file.type === "image/heic" ||
+    file.type === "image/heif"
+  );
+}
+
+// WebP and AVIF can be decoded natively by the browser via canvas,
+// so they don't need the heic-to engine.
+function isCanvasDecodable(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return (
+    name.endsWith(".webp") ||
+    name.endsWith(".avif") ||
+    file.type === "image/webp" ||
+    file.type === "image/avif"
+  );
+}
+
+function isSupportedInput(file: File): boolean {
+  return isHeic(file) || isCanvasDecodable(file);
+}
+
 async function readImageDimensions(blob: Blob): Promise<PixelDimensions> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -79,11 +105,15 @@ async function resizeBlob(
   quality: number,
   resizeMode: ResizeMode,
   resizeValue: number,
-  sourceDimensions: PixelDimensions
+  sourceDimensions: PixelDimensions,
+  alreadyEncoded: boolean
 ): Promise<{ blob: Blob; dimensions: PixelDimensions }> {
   if (resizeMode === "none") {
-    if (format === "image/png") return { blob, dimensions: sourceDimensions };
-    // Re-encode JPEG with chosen quality
+    // Only skip re-encoding when the blob is already in the target format
+    // (the heic-to path). WebP/AVIF inputs always need re-encoding.
+    if (format === "image/png" && alreadyEncoded) {
+      return { blob, dimensions: sourceDimensions };
+    }
     return {
       blob: await reencodeBlob(blob, format, quality),
       dimensions: sourceDimensions,
@@ -218,14 +248,8 @@ function App() {
   }, [format, qualityPreset, customQuality, resizeMode, resizeValue]);
 
   const addFiles = useCallback((fileList: FileList) => {
-    const heicFiles = Array.from(fileList).filter(
-      (f) =>
-        f.name.toLowerCase().endsWith(".heic") ||
-        f.name.toLowerCase().endsWith(".heif") ||
-        f.type === "image/heic" ||
-        f.type === "image/heif"
-    );
-    const entries: FileEntry[] = heicFiles.map((f) => ({
+    const supportedFiles = Array.from(fileList).filter(isSupportedInput);
+    const entries: FileEntry[] = supportedFiles.map((f) => ({
       id: String(++idCounter),
       file: f,
       name: f.name,
@@ -275,18 +299,30 @@ function App() {
       );
 
       try {
-        if (!heicToModule) throw new Error("heic-to module not loaded");
-        const buffer = await entry.file.arrayBuffer();
-        const fileBlob = new Blob([buffer]);
+        let blob: Blob;
+        // HEIC/HEIF needs the heic-to engine to decode. WebP/AVIF are
+        // decoded natively by the browser, so we feed the source file
+        // straight into the canvas pipeline.
+        let alreadyEncoded: boolean;
+        if (isHeic(entry.file)) {
+          if (!heicToModule) throw new Error("heic-to module not loaded");
+          const buffer = await entry.file.arrayBuffer();
+          const fileBlob = new Blob([buffer]);
 
-        const converted = await heicToModule({
-          blob: fileBlob,
-          type: format,
-          quality: format === "image/jpeg" ? quality : undefined,
-        });
+          const converted = await heicToModule({
+            blob: fileBlob,
+            type: format,
+            quality: format === "image/jpeg" ? quality : undefined,
+          });
 
-        // heic-to returns a Blob directly
-        const blob = converted as Blob;
+          // heic-to returns a Blob already in the target format
+          blob = converted as Blob;
+          alreadyEncoded = true;
+        } else {
+          blob = entry.file;
+          alreadyEncoded = false;
+        }
+
         const sourceDimensions = await readImageDimensions(blob);
 
         setFiles((prev) =>
@@ -303,7 +339,8 @@ function App() {
           quality,
           resizeMode,
           resizeValue,
-          sourceDimensions
+          sourceDimensions,
+          alreadyEncoded
         );
         const resultName = replaceExtension(entry.name, format);
 
@@ -373,10 +410,10 @@ function App() {
 
   return (
     <div className="app">
-      <h1>HEIC → {format === "image/jpeg" ? "JPEG" : "PNG"}</h1>
+      <h1>HEIC / WebP / AVIF → {format === "image/jpeg" ? "JPEG" : "PNG"}</h1>
       <p style={{ marginBottom: "1.5em" }}>
-        Drop your HEIC/HEIF files below to convert them. Everything runs in
-        your browser — no files are uploaded.
+        Drop your HEIC/HEIF, WebP or AVIF files below to convert them.
+        Everything runs in your browser — no files are uploaded.
       </p>
 
       {/* Drop Zone */}
@@ -389,12 +426,12 @@ function App() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".heic,.heif,image/heic,image/heif"
+          accept=".heic,.heif,.webp,.avif,image/heic,image/heif,image/webp,image/avif"
           multiple
           onChange={handleFileInput}
         />
         <p>
-          <strong>Drop HEIC files here</strong>
+          <strong>Drop HEIC, WebP or AVIF files here</strong>
           <br />
           or click to browse
         </p>

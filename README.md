@@ -1,12 +1,12 @@
 # HEIC Converter
 
-A small browser-based app for converting `.heic` and `.heif` images into `JPEG` or `PNG`.
+A small browser-based app for converting `.heic`, `.heif`, `.webp` and `.avif` images into `JPEG` or `PNG`.
 
 The app runs fully client-side in the browser. Files are processed locally and are not uploaded to a server.
 
 ## Features
 
-- Drag and drop one or more HEIC/HEIF files
+- Drag and drop one or more HEIC/HEIF, WebP or AVIF files
 - Convert to JPEG or PNG
 - Choose JPEG quality presets or a custom quality value
 - Resize by max width or max height before download
